@@ -1,0 +1,117 @@
+AOSP 源码下载与编译完整总结
+一、硬件环境
+项目	配置
+电脑	联想 R9000P（2025款）
+硬盘	原装 1TB + 加装 2TB SSD + 500GB SSD
+虚拟机	VMware Workstation 16，Ubuntu 22.04
+虚拟机配置	12 核 CPU，16GB 内存，650GB 虚拟硬盘（NVMe）
+编译时间	首次完整编译约 2-4 小时
+二、源码下载经验总结
+成功方案
+步骤	方法	说明
+1. 下载初始化包	迅雷下载清华镜像站 aosp-latest.tar（约 90GB）	HTTP 多线程下载，速度稳定（1-2 MB/s）
+2. 解包	tar -xvf aosp-latest.tar	得到 .repo/ 目录（约 92GB）
+3. 本地解包	repo sync -l -j4	从本地 .repo/ 解包成可读源码
+4. 联网同步	repo sync -c -j2 --no-clone-bundle	低并发（-j2） 从清华源同步差异
+❌ 失败教训
+失败原因	说明	正确做法
+并发数太高	-j4 以上触发镜像站限流，卡在 48%	使用 -j2 低并发
+直连 Google	被限流/墙，速度极慢	使用清华/中科大镜像源
+磁盘空间不足	下载 90GB 文件写满硬盘	确保剩余空间 ≥ 200GB
+repo sync -l 本地解包慢	解包 92GB 数据需要数小时	只在网络不通时使用
+核心经验
+清华源 + -j2 + --no-clone-bundle = 稳定成功
+
+清华镜像站对并发连接数有限制，-j2 是最稳妥的选择。
+
+三、编译环境配置
+1. 安装编译依赖
+bash
+sudo apt update
+sudo apt install -y openjdk-11-jdk python3 python3-protobuf protobuf-compiler \
+    git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib \
+    g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev \
+    libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig \
+    cpio bc rsync libssl-dev libelf-dev ccache
+2. 修复常见依赖缺失
+bash
+# libncurses.so.5 缺失
+sudo apt install libncurses5 libncurses5-dev lib32ncurses5 lib32z1 lib32stdc++6
+
+# ccache 只读问题
+export CCACHE_DISABLE=1
+export USE_CCACHE=0
+3. 启用 ccache（可选，加速二次编译）
+bash
+sudo apt install ccache
+ccache -M 50G
+export USE_CCACHE=1
+export CCACHE_EXEC=/usr/bin/ccache
+四、编译命令
+完整编译流程
+bash
+# 1. 进入源码目录
+cd ~/aosp_local/aosp
+
+# 2. 清理编译产物（可选，如需重新编译）
+rm -rf out/
+
+# 3. 设置环境
+source build/envsetup.sh
+
+# 4. 选择编译目标
+lunch aosp_x86_64-eng
+
+# 5. 开始编译（带时间统计）
+echo "========== 开始编译: $(date) ==========" && time make -j8 && echo "========== 编译结束: $(date) =========="
+编译参数建议
+虚拟机内存	推荐 -j 值	说明
+8GB	-j4	内存有限，降低并发
+12GB	-j8	适中
+16GB+	-j8 或 -j12	性能较好
+注意： 如果编译过程中出现 exit status 137（OOM），说明内存不足，需要降低 -j 值。
+
+五、常见编译错误及解决
+错误	原因	解决方法
+libncurses.so.5: cannot open	缺少 32 位兼容库	sudo apt install libncurses5 libncurses5-dev
+ccache: Read-only file system	ccache 目录只读	export CCACHE_DISABLE=1
+exit status 137	内存不足（OOM）	降低并行数，如 make -j4
+VNDK version 28 not found	源码版本不一致	用 repo sync 更新代码
+select not set	Soong 构建系统版本不匹配	用 repo sync 更新代码
+六、源码压缩备份
+分卷压缩（排除 out/ 目录）
+bash
+cd ~/aosp_local
+
+# 方法一：tar + split（每个 4GB）
+tar -czvf - aosp/ --exclude=aosp/out | split -b 4096M - aosp_source_20260705.tar.gz.
+
+# 方法二：rar + 恢复记录（推荐，有容错）
+sudo apt install rar
+tar -cvf aosp_source_20260705.tar aosp/ --exclude=aosp/out
+rar a -v4096M -rr5% -ep1 aosp_source_20260705.rar aosp_source_20260705.tar
+rm aosp_source_20260705.tar
+解压命令
+bash
+# tar 分卷解压
+cat aosp_source_20260705.tar.gz.* | tar -xzvf -
+
+# rar 解压
+rar x aosp_source_20260705.part1.rar
+七、核心经验总结
+类别	关键点
+下载源码	迅雷下载 aosp-latest.tar + repo sync -j2
+镜像源	清华源（mirrors.tuna.tsinghua.edu.cn）
+并发数	永远用 -j2，不要用 -j4 以上
+编译内存	确保内存 ≥ 12GB，否则降低 -j 值
+编译时间	首次约 2-4 小时，二次使用 ccache 可加速
+备份	排除 out/ 目录，压缩约 40-50GB
+版本信息：
+
+源码版本：Android 12.1.0_r5
+
+编译目标：aosp_x86_64-eng（模拟器）
+
+日期：2026年7月5日
+
+
