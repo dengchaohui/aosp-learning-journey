@@ -1,0 +1,62 @@
+diff --git a/libdexfile/dex/dex_file.cc b/libdexfile/dex/dex_file.cc
+index dc5f27e4f6..c59c9b5687 100644
+--- a/libdexfile/dex/dex_file.cc
++++ b/libdexfile/dex/dex_file.cc
+@@ -126,6 +126,9 @@ DexFile::DexFile(const uint8_t* base,
+       is_compact_dex_(is_compact_dex),
+       hiddenapi_domain_(hiddenapi::Domain::kApplication) {
+   CHECK(begin_ != nullptr) << GetLocation();
++
++    LOG(INFO) << "[DEX_HOOK] DexFile: base=" << std::hex << (uintptr_t)begin_ << ", size=" << std::dec << size_ << ", location=" << location_;
++    
+   CHECK_GT(size_, 0U) << GetLocation();
+   // Check base (=header) alignment.
+   // Must be 4-byte aligned to avoid undefined behavior when accessing
+diff --git a/libdexfile/dex/dex_file_loader.cc b/libdexfile/dex/dex_file_loader.cc
+index 861f911b67..56148e6146 100644
+--- a/libdexfile/dex/dex_file_loader.cc
++++ b/libdexfile/dex/dex_file_loader.cc
+@@ -350,6 +350,22 @@ std::unique_ptr<DexFile> DexFileLoader::OpenCommon(const uint8_t* base,
+                                                    std::string* error_msg,
+                                                    std::unique_ptr<DexFileContainer> container,
+                                                    VerifyResult* verify_result) {
++  if (size > 0 && base != nullptr) {
++    static int dex_dump_counter = 0;
++    char filename[256];
++    snprintf(filename, sizeof(filename), "/sdcard/dex_dump_%d.dex", dex_dump_counter++);
++    FILE* fp = fopen(filename, "wb");
++    if (fp) {
++      fwrite(base, 1, size, fp);
++      fclose(fp);
++      LOG(INFO) << "[DEX_WRITE] Wrote " << size << " bytes to " << filename;
++    }
++  }
++
++  if (verify_result != nullptr) {
++    *verify_result = VerifyResult::kVerifyNotAttempted;
++  }
++  
+   if (verify_result != nullptr) {
+     *verify_result = VerifyResult::kVerifyNotAttempted;
+   }
+diff --git a/runtime/class_linker.cc b/runtime/class_linker.cc
+index e21a004e33..76b9896d96 100644
+--- a/runtime/class_linker.cc
++++ b/runtime/class_linker.cc
+@@ -3071,6 +3071,16 @@ ObjPtr<mirror::Class> ClassLinker::DefineClass(Thread* self,
+                                                Handle<mirror::ClassLoader> class_loader,
+                                                const DexFile& dex_file,
+                                                const dex::ClassDef& dex_class_def) {
++    // 打印特定类的加载信息
++  if (descriptor != nullptr) {
++    std::string cls(descriptor);
++    if (cls.find("tianyu") != std::string::npos ||
++        cls.find("stub") != std::string::npos ||
++        cls.find("Stub") != std::string::npos) {
++      LOG(INFO) << "[CLASS_LOAD] DefineClass: " << descriptor 
++                << " from " << dex_file.GetLocation();
++    }
++  }
+   ScopedDefiningClass sdc(self);
+   StackHandleScope<3> hs(self);
+   metrics::AutoTimer timer{GetMetrics()->ClassLoadingTotalTime()};
